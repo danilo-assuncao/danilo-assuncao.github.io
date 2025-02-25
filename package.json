@@ -1,0 +1,43 @@
+{
+  "name": "markdown-blog",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": {
+    "gray-matter": "^4.0.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-markdown": "^9.1.0",
+    "react-router-dom": "^6.29.0",
+    "react-scripts": "^5.0.1",
+    "styled-components": "^6.1.15"
+  },
+  "scripts": {
+    "start": "node scripts/generate-post-list.js && react-app-rewired start",
+    "build": "node scripts/generate-post-list.js && react-app-rewired build",
+    "test": "react-app-rewired test",
+    "eject": "react-scripts eject",
+    "posts": "node scripts/generate-post-list.js"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "devDependencies": {
+    "raw-loader": "^4.0.2",
+    "react-app-rewired": "^2.2.1"
+  }
+}

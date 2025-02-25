@@ -1,0 +1,22 @@
+{
+  "posts": [
+    {
+      "id": "welcome",
+      "title": "Welcome to My Markdown Blog",
+      "date": "2025-02-20",
+      "description": "Introduction to our Markdown-powered blog system"
+    },
+    {
+      "id": "markdown-guide",
+      "title": "Markdown Guide - Tips and Tricks",
+      "date": "2025-02-22",
+      "description": "Learn how to use Markdown features to create beautiful blog posts"
+    },
+    {
+      "id": "example-post",
+      "title": "Example Blog Post",
+      "date": "2025-02-21",
+      "description": "This is an example of how to create a new blog post"
+    }
+  ]
+}
