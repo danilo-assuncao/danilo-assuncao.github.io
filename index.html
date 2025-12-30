@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>Tic • Tac</title>
+    <meta
+      name="description"
+      content="Uma pequena surpresa interativa: cada tic… tac… desbloqueia um pedaço do que eu sinto."
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="bg" aria-hidden="true"></div>
+    <canvas id="confetti" class="confetti" aria-hidden="true"></canvas>
+    <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+    <main class="wrap">
+      <header class="top">
+        <div class="brand" aria-label="Tic Tac">
+          <span class="brand__dot" aria-hidden="true"></span>
+          <span class="brand__text">tic • tac</span>
+        </div>
+        <button id="resetBtn" class="btn btn--ghost" type="button" title="Recomeçar">
+          Recomeçar
+        </button>
+      </header>
+
+      <section class="hero" aria-label="Introdução">
+        <div class="hero__left">
+          <h1 class="h1">
+            Uma surpresa em
+            <span class="accent">pequenos segundos</span>.
+          </h1>
+          <p class="sub">
+            Você vai desbloquear pedacinhos de um texto — e no fim tudo vira uma coisa só.
+          </p>
+
+          <div class="progress" aria-label="Progresso">
+            <div class="progress__bar">
+              <div id="progressFill" class="progress__fill" style="width: 0%"></div>
+            </div>
+            <div class="progress__meta">
+              <span id="progressLabel" class="muted">0/6 desbloqueados</span>
+              <span id="stepLabel" class="muted">Comece quando quiser</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="hero__right">
+          <div class="clockCard" aria-label="Relógio interativo">
+            <div class="clock" role="img" aria-label="Um relógio que faz tic tac">
+              <div class="clock__stage" aria-label="tic à esquerda, tac à direita">
+                <span id="tic" class="tt tt--tic">tic</span>
+                <div class="clock__face" aria-hidden="true">
+                  <div class="clock__ticks" aria-hidden="true"></div>
+                  <div class="clock__hand clock__hand--min" aria-hidden="true"></div>
+                  <div class="clock__hand clock__hand--sec" aria-hidden="true"></div>
+                  <div class="clock__pin" aria-hidden="true"></div>
+                </div>
+                <span id="tac" class="tt tt--tac">tac</span>
+              </div>
+            </div>
+            <div class="clockCard__actions">
+              <button id="startBtn" class="btn" type="button">Começar</button>
+              <button id="hintBtn" class="btn btn--ghost" type="button">Dica</button>
+            </div>
+            <p id="hintText" class="hint" hidden>
+              Sem pressa. Cada passo desbloqueia uma parte do texto. Quando algo “clicar”, você vai
+              sentir.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section id="challengePanel" class="panel" aria-label="Desafio atual">
+        <div class="panel__head">
+          <div>
+            <div class="kicker">Desafio</div>
+            <h2 id="challengeTitle" class="h2">—</h2>
+          </div>
+          <div class="pill" id="challengePill" aria-label="Status do desafio">Aguardando</div>
+        </div>
+
+        <div class="panel__body">
+          <p id="challengeDesc" class="desc">Clique em “Começar”.</p>
+
+          <!-- Challenge: date -->
+          <div id="challengeDate" class="challenge" hidden>
+            <label class="label" for="dateInput">Escolha o dia (mês/dia não precisa de ano)</label>
+            <div class="row">
+              <input
+                id="dateInput"
+                class="input"
+                type="date"
+                aria-describedby="dateHelp"
+                autocomplete="off"
+              />
+              <button id="dateCheckBtn" class="btn" type="button">Confirmar</button>
+            </div>
+            <div id="dateHelp" class="muted small">Dica: 18 de outubro.</div>
+          </div>
+
+          <!-- Challenge: secret code -->
+          <div id="challengeCode" class="challenge" hidden>
+            <label class="label" for="codeInput">Digite o nosso código</label>
+            <div class="row">
+              <input
+                id="codeInput"
+                class="input"
+                type="text"
+                inputmode="text"
+                autocomplete="off"
+                placeholder="..."
+              />
+              <button id="codeCheckBtn" class="btn" type="button">Desbloquear</button>
+            </div>
+            <div class="muted small">Pode ser com espaço: “tic tac”.</div>
+          </div>
+
+          <!-- Challenge: feelings -->
+          <div id="challengeFeelings" class="challenge" hidden>
+            <div class="muted small">Escolha duas palavras que combinam com você.</div>
+            <div class="cards">
+              <button class="cardPick" type="button" data-pick="viver">Viver</button>
+              <button class="cardPick" type="button" data-pick="felicidade">Felicidade</button>
+              <button class="cardPick" type="button" data-pick="dúvida">Dúvida</button>
+              <button class="cardPick" type="button" data-pick="distância">Distância</button>
+            </div>
+            <div class="row row--end">
+              <button id="feelingsConfirmBtn" class="btn" type="button" disabled>
+                Confirmar escolhas
+              </button>
+            </div>
+          </div>
+
+          <!-- Challenge: hold -->
+          <div id="challengeHold" class="challenge" hidden>
+            <div class="muted small">Aperte e segure sem correr contra o tempo.</div>
+            <button id="holdBtn" class="holdBtn" type="button" aria-label="Segure para desbloquear">
+              Segurar
+              <span id="holdMeter" class="holdBtn__meter" aria-hidden="true"></span>
+            </button>
+            <div class="muted small">3 segundos.</div>
+          </div>
+
+          <!-- Challenge: rhythm -->
+          <div id="challengeRhythm" class="challenge" hidden>
+            <div class="muted small">
+              Toque “tic” e “tac” no ritmo certo: tic… tac… tic… tac…
+            </div>
+            <div class="row">
+              <button id="rhythmTic" class="btn btn--ghost" type="button">tic</button>
+              <button id="rhythmTac" class="btn btn--ghost" type="button">tac</button>
+            </div>
+            <div id="rhythmStatus" class="muted small" aria-live="polite">0/4</div>
+          </div>
+
+          <div class="row row--end">
+            <button id="nextBtn" class="btn" type="button" hidden>Continuar</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="storyPanel" class="panel" aria-label="Texto desbloqueado">
+        <div class="panel__head">
+          <div>
+            <div class="kicker">O texto</div>
+            <h2 class="h2">Mensagem de amor</h2>
+          </div>
+          <button id="finalBtn" class="btn btn--ghost" type="button" hidden>
+            Ver tudo (final)
+          </button>
+        </div>
+        <p class="desc">
+          Cada trecho vem como uma carta. Clique para abrir. No final, todas elas viram uma só.
+        </p>
+        <div id="cardGrid" class="cardGrid" aria-live="polite"></div>
+        <button id="finalCard" class="finalCard" type="button" hidden>
+          <span class="finalCard__kicker">Carta final</span>
+          <span class="finalCard__title">Abrir mensagem completa</span>
+          <span class="finalCard__hint">tic… tac…</span>
+        </button>
+      </section>
+
+      <footer class="footer">
+        <span class="muted small">Feito com carinho — um segundo de cada vez.</span>
+      </footer>
+    </main>
+
+    <dialog id="finalDialog" class="dialog" aria-label="Texto final">
+      <div class="dialog__inner">
+        <div class="dialog__head">
+          <div>
+            <div class="kicker">Final</div>
+            <div class="h2">tic… tac…</div>
+          </div>
+          <button id="closeDialogBtn" class="btn btn--ghost" type="button">Fechar</button>
+        </div>
+        <div id="finalText" class="finalText"></div>
+        <div class="row row--end">
+          <button id="copyBtn" class="btn" type="button">Copiar texto</button>
+        </div>
+      </div>
+    </dialog>
+
+    <script src="./script.js"></script>
+  </body>
+</html>
+
+

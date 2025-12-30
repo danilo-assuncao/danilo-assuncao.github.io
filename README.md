@@ -1,65 +1,47 @@
-# Markdown Blog
+## Site surpresa “tic • tac”
 
-A simple and customizable blog system built with React that renders Markdown files.
+Uma página única e interativa para ir **desbloqueando** partes do texto, até formar o final.
 
-## Features
+### Como rodar
 
-- React-based blog system
-- Markdown support with syntax highlighting
-- Customizable theming system
-- Responsive design
-- Clean and intuitive interface
+Você pode abrir direto o arquivo `index.html` no navegador, ou (recomendado) usar um servidor local:
 
-## Getting Started
-
-1. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-2. Start the development server:
-   ```bash
-   npm start
-   ```
-
-3. Create new blog posts by adding Markdown files to the `src/posts` directory.
-
-## Customization
-
-### Theme
-
-The blog's appearance can be customized by modifying the theme configuration in `src/theme.js`. You can change:
-
-- Colors
-- Typography
-- Spacing
-- Breakpoints
-
-### Adding Posts
-
-1. Create a new `.md` file in the `src/posts` directory
-2. Add the post metadata to the `posts` array in `src/components/BlogList.js`
-
-## Dependencies
-
-- React
-- React Router
-- React Markdown
-- Styled Components
-
-## Project Structure
-
+```bash
+cd /Users/danilo.assuncao/dev/dan/site-brinks
+python3 -m http.server 5173
 ```
-markdown-blog/
-├── src/
-│   ├── components/
-│   │   ├── BlogList.js
-│   │   ├── BlogPost.js
-│   │   └── Header.js
-│   ├── posts/
-│   │   └── welcome.md
-│   ├── App.js
-│   ├── index.js
-│   └── theme.js
-└── package.json
-```
+
+Depois abra no navegador:
+
+- `http://localhost:5173`
+
+### Publicar no GitHub Pages (github.io)
+
+Esse projeto é **estático** (HTML/CSS/JS), que é exatamente o que o GitHub Pages serve.
+
+- **Opção A (repositório normal)**: publique a branch `main` pela pasta raiz (`/`)
+- **Opção B (seu github.io)**: crie um repositório `SEUUSUARIO.github.io` e coloque esses arquivos na raiz
+
+No GitHub:
+
+- Vá em `Settings` → `Pages`
+- Em **Build and deployment**, selecione:
+  - **Source**: `Deploy from a branch`
+  - **Branch**: `main` / `root (/)`
+
+O arquivo `.nojekyll` já está incluído para evitar comportamento do Jekyll com nomes/paths.
+
+### Como usar
+
+- Clique em **Começar**
+- Vá completando os desafios (data, código “tic tac”, etc.)
+- No final, use **Ver tudo (final)** para abrir o texto completo e **Copiar texto** se quiser.
+
+### Reset
+
+O progresso fica salvo no navegador (localStorage). Para apagar:
+
+- Clique em **Recomeçar**, ou
+- Limpe os dados do site no navegador.
+
+
