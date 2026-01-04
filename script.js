@@ -44,7 +44,7 @@ let quality = {
   dprCap: 1.5,
   sparkleCap: 1200,
   textCap: 1200,
-  burstMultiplier: 1.0,
+  burstMultiplier: 0.75,
   stepMin: 3,
   stepMax: 7,
 };
@@ -129,14 +129,14 @@ function drawStars(t) {
   if (!prefersReducedMotion() && flash) {
     const p = 1 - clamp((t - flash.t0) / flash.dur, 0, 1);
     ctx.globalCompositeOperation = "screen";
-    ctx.fillStyle = `rgba(255,255,255,${0.12 * p})`;
+    ctx.fillStyle = `rgba(255,255,255,${0.07 * p})`;
     ctx.fillRect(0, 0, w, h);
 
-    const R = Math.max(w, h) * (0.35 + (1 - p) * 1.45);
+    const R = Math.max(w, h) * (0.28 + (1 - p) * 1.10);
     const g = ctx.createRadialGradient(flash.x, flash.y, 0, flash.x, flash.y, R);
-    g.addColorStop(0, `rgba(255,255,255,${0.48 * p})`);
-    g.addColorStop(0.25, `rgba(155,246,255,${0.24 * p})`);
-    g.addColorStop(0.55, `rgba(244,208,111,${0.13 * p})`);
+    g.addColorStop(0, `rgba(255,255,255,${0.34 * p})`);
+    g.addColorStop(0.25, `rgba(155,246,255,${0.18 * p})`);
+    g.addColorStop(0.55, `rgba(244,208,111,${0.10 * p})`);
     g.addColorStop(1, "rgba(255,255,255,0)");
     ctx.fillStyle = g;
     ctx.beginPath();
@@ -489,18 +489,17 @@ function spawnMeteor({ intensity = 1 } = {}) {
 function startScreenExplosion(cx, cy) {
   if (prefersReducedMotion()) return;
   const now = performance.now();
-  flash = { t0: now, dur: 900, x: cx, y: cy };
+  flash = { t0: now, dur: 750, x: cx, y: cy };
 
   // BIG fireworks feel: multiple spark bursts across the screen
   const m = quality.burstMultiplier;
-  sparkBurstAt(cx, cy, 2.2 * m);
-  for (let i = 0; i < Math.floor(5 * m + 2); i++) {
-    sparkBurstAt(rand(w * 0.06, w * 0.94), rand(h * 0.08, h * 0.72), rand(0.9, 1.6) * m);
+  sparkBurstAt(cx, cy, 1.35 * m);
+  for (let i = 0; i < Math.floor(3 * m + 1); i++) {
+    sparkBurstAt(rand(w * 0.10, w * 0.90), rand(h * 0.12, h * 0.68), rand(0.7, 1.15) * m);
   }
   // quick meteor rain during the blast
-  spawnMeteor({ intensity: 1.25 * m });
-  setTimeout(() => spawnMeteor({ intensity: 1.15 * m }), 90);
-  setTimeout(() => spawnMeteor({ intensity: 1.05 * m }), 180);
+  spawnMeteor({ intensity: 1.0 * m });
+  if (m > 0.7) setTimeout(() => spawnMeteor({ intensity: 0.9 * m }), 120);
 }
 
 function computeTextTargets(text) {
