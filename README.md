@@ -1,6 +1,6 @@
-## Site surpresa “tic • tac”
+## Site “Clarinha ✦”
 
-Uma página única e interativa para ir **desbloqueando** partes do texto, até formar o final.
+Uma **página única** com **céu animado**, estrelas e **estrelas cadentes** — com o nome **Clarinha** em evidência.
 
 ### Como rodar
 
@@ -33,15 +33,11 @@ O arquivo `.nojekyll` já está incluído para evitar comportamento do Jekyll co
 
 ### Como usar
 
-- Clique em **Começar**
-- Vá completando os desafios (data, código “tic tac”, etc.)
-- No final, use **Ver tudo (final)** para abrir o texto completo e **Copiar texto** se quiser.
+- Clique em **Fazer um pedido** para revelar a mensagem.
+- Use **Modo calmo** para reduzir as estrelas cadentes (e alternar de volta quando quiser).
 
-### Reset
+### Observações
 
-O progresso fica salvo no navegador (localStorage). Para apagar:
-
-- Clique em **Recomeçar**, ou
-- Limpe os dados do site no navegador.
+- O site respeita **prefers-reduced-motion** (se o usuário tiver “reduzir movimento” ativado no sistema).
 
 

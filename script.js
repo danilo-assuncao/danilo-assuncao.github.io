@@ -1,83 +1,13 @@
 /**
- * Surprise page: progressive unlock + local persistence.
+ * Clarinha — sky tribute
+ * - Stars: canvas starfield with subtle twinkle
+ * - Meteors: canvas-based shooting stars with head + tail + fragments (more realistic)
  * No dependencies.
  */
 
-const STORAGE_KEY = "tic-tac-surpresa:v1";
-
-const STORY_PARTS = [
-  "Desde Outubro, o meu tempo deixou de ser apenas tempo.\nNão foi o relógio que mudou, nem os dias. Foi o jeito que tudo passou a ser sentido.",
-  "Antes, os segundos apenas seguiam em frente.\nHoje, eles fazem tic… tac…\nE em cada batida, sem exceção, eu acabo em você.",
-  "É bonito perceber que a gente criou um jeito de se reconhecer sem dizer nomes.\nComo se tic tac fosse mais do que uma brincadeira.\nFosse o nosso idioma secreto.\nNosso código silencioso.\nA forma mais simples e verdadeira de dizer é você.",
-  "Quando eu penso em você, o mundo desacelera.\nEu sinto calma.\nSinto casa.\nE entendo que não quero correr contra o tempo, nem apressar nada.\nEu quero viver.\nE quero viver com você, segundo por segundo.",
-  "Se o tempo continuar passando assim, eu aceito todos eles.\nPorque todo tic tac meu termina em você.",
-  "Porque todo tic tac meu termina em você.",
-];
-
-// We intentionally reveal 6 steps, but the last paragraph is a soft “echo” (and the modal shows full text in proper form).
-const FINAL_TEXT = [
-  "Desde Outubro, o meu tempo deixou de ser apenas tempo.",
-  "Não foi o relógio que mudou, nem os dias. Foi o jeito que tudo passou a ser sentido.",
-  "",
-  "Antes, os segundos apenas seguiam em frente.",
-  "Hoje, eles fazem tic… tac…",
-  "E em cada batida, sem exceção, eu acabo em você.",
-  "",
-  "É bonito perceber que a gente criou um jeito de se reconhecer sem dizer nomes.",
-  "Como se tic tac fosse mais do que uma brincadeira.",
-  "Fosse o nosso idioma secreto.",
-  "Nosso código silencioso.",
-  "A forma mais simples e verdadeira de dizer é você.",
-  "",
-  "Quando eu penso em você, o mundo desacelera.",
-  "Eu sinto calma.",
-  "Sinto casa.",
-  "E entendo que não quero correr contra o tempo, nem apressar nada.",
-  "Eu quero viver.",
-  "E quero viver com você, segundo por segundo.",
-  "",
-  "Se o tempo continuar passando assim, eu aceito todos eles.",
-  "Porque todo tic tac meu termina em você.",
-].join("\n");
-
-const CHALLENGES = [
-  {
-    key: "start",
-    title: "Faça o relógio começar",
-    desc: "Toque em “Começar” e veja o tic… tac… ganhar vida.",
-    ui: "none",
-  },
-  {
-    key: "date",
-    title: "Marque o dia",
-    desc: "Escolha o dia em que o tempo mudou.",
-    ui: "date",
-  },
-  {
-    key: "code",
-    title: "Diga o nosso idioma",
-    desc: "Às vezes, uma palavra é só uma palavra. Às vezes, é um lugar.",
-    ui: "code",
-  },
-  {
-    key: "feelings",
-    title: "Escolha duas palavras",
-    desc: "Duas palavras que combinam com o que você me traz.",
-    ui: "feelings",
-  },
-  {
-    key: "hold",
-    title: "Sem pressa",
-    desc: "Aperte e segure por 3 segundos. Sem correr contra o tempo.",
-    ui: "hold",
-  },
-  {
-    key: "rhythm",
-    title: "No ritmo certo",
-    desc: "tic… tac… tic… tac… (quatro toques, alternando).",
-    ui: "rhythm",
-  },
-];
+function prefersReducedMotion() {
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
+}
 
 function $(id) {
   const el = document.getElementById(id);
@@ -85,721 +15,750 @@ function $(id) {
   return el;
 }
 
+// ---- Stars (canvas) ----
+const STAR_CFG = {
+  countBase: 240, // scaled by screen area
+  twinkleSpeed: 0.55,
+};
+
+let stars = [];
+let ctx = null;
+let w = 0;
+let h = 0;
+let dpr = 1;
+let raf = 0;
+let lastT = 0;
+let sparkles = [];
+let showActive = false;
+let showUntil = 0;
+let meteors = [];
+let meteorSparks = [];
+let textParticles = [];
+let finale = null; // { until, phaseUntil, gatherUntil, textOnAt, textOffAt, cx, cy, text }
+let comets = []; // cinematic shooting stars that can collide
+let impact = null; // { x,y, at, triggered }
+let flash = null; // { t0, dur, x, y }
+
+function rand(min, max) {
+  return min + Math.random() * (max - min);
+}
+
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
 
-function normalize(s) {
-  return (s ?? "")
-    .toString()
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ");
+function resizeStars() {
+  const canvas = $("stars");
+  dpr = window.devicePixelRatio || 1;
+  w = canvas.clientWidth;
+  h = canvas.clientHeight;
+  canvas.width = Math.floor(w * dpr);
+  canvas.height = Math.floor(h * dpr);
+  ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const area = w * h;
+  const scale = Math.max(0.7, Math.min(1.8, area / (1200 * 700)));
+  const count = Math.floor(STAR_CFG.countBase * scale);
+  stars = Array.from({ length: count }, () => ({
+    x: Math.random() * w,
+    y: Math.random() * h,
+    r: rand(0.6, 1.8),
+    a: rand(0.25, 0.95),
+    tw: rand(0.6, 1.4),
+    hue: rand(190, 55), // mostly cool; some warm-ish
+    vx: rand(-12, 12),
+    vy: rand(-10, 10),
+  }));
 }
 
-function safeParse(json, fallback) {
-  try {
-    return JSON.parse(json);
-  } catch {
-    return fallback;
-  }
-}
+function drawStars(t) {
+  if (!ctx) return;
+  const dt = Math.min(0.05, (t - lastT) / 1000);
+  lastT = t;
 
-function loadState() {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  const state = safeParse(raw, null);
-  if (!state || typeof state !== "object") return { unlocked: 0 };
-  if (typeof state.unlocked !== "number") return { unlocked: 0 };
-  const unlocked = clamp(state.unlocked, 0, STORY_PARTS.length);
-  let opened = Array.isArray(state.opened) ? state.opened.map(Boolean) : [];
-  if (opened.length < unlocked) opened = opened.concat(Array(unlocked - opened.length).fill(false));
-  if (opened.length > unlocked) opened = opened.slice(0, unlocked);
-  return { unlocked, opened };
-}
+  ctx.clearRect(0, 0, w, h);
 
-function saveState(state) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-}
+  // Full-screen “fireworks flash” (fills the whole screen)
+  if (!prefersReducedMotion() && flash) {
+    const p = 1 - clamp((t - flash.t0) / flash.dur, 0, 1);
+    ctx.globalCompositeOperation = "screen";
+    ctx.fillStyle = `rgba(255,255,255,${0.12 * p})`;
+    ctx.fillRect(0, 0, w, h);
 
-function splitParagraphs(text) {
-  return text.split("\n").map((s) => s.trimEnd());
-}
+    const R = Math.max(w, h) * (0.35 + (1 - p) * 1.45);
+    const g = ctx.createRadialGradient(flash.x, flash.y, 0, flash.x, flash.y, R);
+    g.addColorStop(0, `rgba(255,255,255,${0.48 * p})`);
+    g.addColorStop(0.25, `rgba(155,246,255,${0.24 * p})`);
+    g.addColorStop(0.55, `rgba(244,208,111,${0.13 * p})`);
+    g.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(flash.x, flash.y, R, 0, Math.PI * 2);
+    ctx.fill();
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function prefersReducedMotion() {
-  return window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
-}
-
-function renderCards() {
-  const grid = $("cardGrid");
-  grid.innerHTML = "";
-  for (let i = 0; i < state.unlocked; i++) {
-    grid.appendChild(createCard(i, state.opened?.[i] === true));
-  }
-}
-
-function createCard(index, isOpen) {
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.className = "loveCard";
-  btn.setAttribute("data-idx", String(index));
-  btn.setAttribute("aria-expanded", isOpen ? "true" : "false");
-
-  const inner = document.createElement("div");
-  inner.className = "loveCard__inner";
-
-  const top = document.createElement("div");
-  top.className = "loveCard__top";
-
-  const title = document.createElement("div");
-  title.className = "loveCard__title";
-  title.textContent = `Carta ${index + 1}`;
-
-  const tag = document.createElement("div");
-  tag.className = "loveCard__tag";
-  tag.textContent = isOpen ? "aberta" : "ABRA";
-  if (!isOpen) tag.classList.add("loveCard__tag--abra");
-
-  top.appendChild(title);
-  top.appendChild(tag);
-
-  const hint = document.createElement("div");
-  hint.className = "loveCard__hint";
-  hint.textContent = isOpen ? "Clique para recolher" : "Clique para abrir";
-
-  const body = document.createElement("div");
-  body.className = "loveCard__body";
-
-  inner.appendChild(top);
-  inner.appendChild(hint);
-  inner.appendChild(body);
-  btn.appendChild(inner);
-
-  if (isOpen) {
-    btn.classList.add("is-open");
-    body.textContent = STORY_PARTS[index];
+    ctx.globalCompositeOperation = "source-over";
+    if (t - flash.t0 >= flash.dur) flash = null;
   }
 
-  btn.addEventListener("click", async () => {
-    const idx = Number(btn.getAttribute("data-idx"));
-    const open = btn.classList.toggle("is-open");
-    btn.setAttribute("aria-expanded", open ? "true" : "false");
-    tag.textContent = open ? "aberta" : "ABRA";
-    tag.classList.toggle("loveCard__tag--abra", !open);
-    hint.textContent = open ? "Clique para recolher" : "Clique para abrir";
+  // subtle nebula glow overlay (very faint)
+  ctx.globalCompositeOperation = "source-over";
+  const g1 = ctx.createRadialGradient(w * 0.2, h * 0.2, 0, w * 0.2, h * 0.2, Math.max(w, h) * 0.7);
+  g1.addColorStop(0, "rgba(155,246,255,0.06)");
+  g1.addColorStop(1, "rgba(155,246,255,0)");
+  ctx.fillStyle = g1;
+  ctx.fillRect(0, 0, w, h);
 
-    if (!open) return;
+  const g2 = ctx.createRadialGradient(w * 0.85, h * 0.25, 0, w * 0.85, h * 0.25, Math.max(w, h) * 0.7);
+  g2.addColorStop(0, "rgba(244,208,111,0.05)");
+  g2.addColorStop(1, "rgba(244,208,111,0)");
+  ctx.fillStyle = g2;
+  ctx.fillRect(0, 0, w, h);
 
-    // stop “new card” highlight once opened
-    btn.classList.remove("loveCard--blink");
-    btn.classList.remove("is-new");
+  // stars (with optional “warp” streaks during show)
+  for (const s of stars) {
+    const tw = prefersReducedMotion() ? 0 : Math.sin(t * 0.001 * STAR_CFG.twinkleSpeed * s.tw);
+    const alpha = s.a + tw * 0.12;
+    ctx.globalAlpha = Math.max(0.05, Math.min(1, alpha));
 
-    // First open: type it.
-    if (!state.opened[idx]) {
-      state.opened[idx] = true;
-      saveState(state);
-      body.textContent = "";
-      await typeIntoSpan(body, STORY_PARTS[idx]);
-    } else {
-      body.textContent = STORY_PARTS[idx];
+    if (showActive && !prefersReducedMotion()) {
+      // accelerate stars a bit and draw a streak
+      const boost = 1 + Math.min(2.2, (showUntil - t) / 800) * 0.8;
+      const dx = s.vx * boost;
+      const dy = s.vy * boost;
+      ctx.strokeStyle = `rgba(155,246,255,${0.12})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y);
+      ctx.lineTo(s.x - dx * 2.8, s.y - dy * 2.8);
+      ctx.stroke();
+
+      s.x += dx;
+      s.y += dy;
+      if (s.x < -10) s.x = w + 10;
+      if (s.x > w + 10) s.x = -10;
+      if (s.y < -10) s.y = h + 10;
+      if (s.y > h + 10) s.y = -10;
     }
-  });
 
-  return btn;
-}
+    // tiny glow
+    const glow = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.r * 5);
+    glow.addColorStop(0, `hsla(${s.hue}, 90%, 80%, ${0.22})`);
+    glow.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r * 5, 0, Math.PI * 2);
+    ctx.fill();
 
-async function typeIntoSpan(span, text) {
-  if (prefersReducedMotion()) {
-    span.textContent = text;
-    return;
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    ctx.fill();
   }
+  ctx.globalAlpha = 1;
 
-  span.textContent = "";
-  const cursor = document.createElement("span");
-  cursor.className = "typingCursor";
-  cursor.setAttribute("aria-hidden", "true");
-  span.appendChild(cursor);
+  // meteors (more realistic than DOM streaks)
+  if (!prefersReducedMotion()) {
+    const nextM = [];
+    const nextS = [];
 
-  let out = "";
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    out += ch;
-    span.textContent = out;
-    span.appendChild(cursor);
-
-    let delay = 14;
-    if (ch === " " || ch === "\n") delay = 8;
-    if (ch === "." || ch === "…" || ch === "!" || ch === "?" || ch === ",") delay = 90;
-    if (ch === "—" || ch === ":" || ch === ";") delay = 70;
-    delay += Math.random() * 18;
-    await sleep(delay);
-  }
-  cursor.remove();
-}
-
-function setPill(status, kind) {
-  const pill = $("challengePill");
-  pill.classList.remove("pill--ok", "pill--warn");
-  pill.textContent = status;
-  if (kind === "ok") pill.classList.add("pill--ok");
-  if (kind === "warn") pill.classList.add("pill--warn");
-}
-
-function setProgress(unlockedCount) {
-  const total = STORY_PARTS.length;
-  $("progressLabel").textContent = `${unlockedCount}/${total} desbloqueados`;
-  const pct = (unlockedCount / total) * 100;
-  $("progressFill").style.width = `${pct}%`;
-}
-
-function hideAllChallenges() {
-  $("challengeDate").hidden = true;
-  $("challengeCode").hidden = true;
-  $("challengeFeelings").hidden = true;
-  $("challengeHold").hidden = true;
-  $("challengeRhythm").hidden = true;
-}
-
-function updateStepLabels(unlockedCount) {
-  if (unlockedCount >= STORY_PARTS.length) {
-    $("stepLabel").textContent = "Tudo desbloqueado";
-  } else {
-    $("stepLabel").textContent = `Próximo: ${unlockedCount + 1} de ${STORY_PARTS.length}`;
-  }
-}
-
-function showFinalButtonIfDone(unlockedCount) {
-  $("finalBtn").hidden = unlockedCount < STORY_PARTS.length;
-}
-
-function showFinalCardIfDone(unlockedCount) {
-  const finalCard = $("finalCard");
-  finalCard.hidden = unlockedCount < STORY_PARTS.length;
-}
-
-let mergeInProgress = false;
-async function mergeCardsIntoFinal() {
-  if (mergeInProgress) return;
-  mergeInProgress = true;
-
-  const grid = $("cardGrid");
-  const cards = Array.from(grid.querySelectorAll(".loveCard"));
-  if (!cards.length) return;
-
-  const finalCard = $("finalCard");
-  finalCard.hidden = false;
-  finalCard.classList.add("is-ghost");
-
-  // Ensure layout updates so we can measure.
-  await sleep(30);
-  const target = finalCard.getBoundingClientRect();
-  const tx = target.left + target.width / 2;
-  const ty = target.top + target.height / 2;
-
-  cards.forEach((c) => (c.disabled = true));
-
-  const animations = cards.map((c, i) => {
-    const r = c.getBoundingClientRect();
-    const cx = r.left + r.width / 2;
-    const cy = r.top + r.height / 2;
-    const dx = tx - cx;
-    const dy = ty - cy;
-    return c.animate(
-      [
-        { transform: "translate3d(0,0,0) scale(1)", opacity: 1 },
-        { transform: `translate3d(${dx}px, ${dy}px, 0) scale(0.22)`, opacity: 0 },
-      ],
-      {
-        duration: 720,
-        delay: i * 55,
-        easing: "cubic-bezier(.2,.9,.2,1)",
-        fill: "forwards",
-      },
-    );
-  });
-
-  await Promise.all(animations.map((a) => a.finished.catch(() => null)));
-  grid.innerHTML = "";
-  finalCard.classList.remove("is-ghost");
-  toast("Todas as cartas viraram uma só");
-}
-
-function openFinalDialog() {
-  const dlg = $("finalDialog");
-  const finalText = $("finalText");
-  finalText.innerHTML = "";
-  for (const line of splitParagraphs(FINAL_TEXT)) {
-    if (line === "") {
-      const spacer = document.createElement("div");
-      spacer.style.height = "10px";
-      finalText.appendChild(spacer);
-      continue;
+    // spawn a rare ambient meteor (outside show)
+    if (!showActive && Math.random() < 0.004 * (dt * 60)) {
+      spawnMeteor({ intensity: 0.7 });
     }
-    const p = document.createElement("p");
-    p.textContent = line;
-    finalText.appendChild(p);
+
+    ctx.globalCompositeOperation = "lighter";
+
+    // update/draw meteors
+    for (const m of meteors) {
+      m.life -= dt;
+      if (m.life <= 0) continue;
+
+      // move
+      m.x += m.vx * dt;
+      m.y += m.vy * dt;
+
+      // occasional fragments from tail
+      if (Math.random() < 0.18 * (dt * 60)) {
+        meteorSparks.push({
+          x: m.x - m.vx * 0.02,
+          y: m.y - m.vy * 0.02,
+          vx: m.vx * rand(0.15, 0.35) + rand(-80, 80),
+          vy: m.vy * rand(0.15, 0.35) + rand(-60, 60),
+          life0: rand(0.22, 0.45),
+          life: 0,
+          r: rand(0.8, 1.7),
+        });
+        meteorSparks[meteorSparks.length - 1].life = meteorSparks[meteorSparks.length - 1].life0;
+      }
+
+      // draw tail (gradient line)
+      const a = Math.max(0, Math.min(1, m.life / m.life0));
+      const tail = m.len;
+      const tx = m.x - m.nx * tail;
+      const ty = m.y - m.ny * tail;
+
+      const grad = ctx.createLinearGradient(tx, ty, m.x, m.y);
+      grad.addColorStop(0, `rgba(155,246,255,0)`);
+      grad.addColorStop(0.35, `rgba(155,246,255,${0.18 * a})`);
+      grad.addColorStop(0.75, `rgba(244,208,111,${0.16 * a})`);
+      grad.addColorStop(1, `rgba(255,255,255,${0.85 * a})`);
+
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = m.w;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(tx, ty);
+      ctx.lineTo(m.x, m.y);
+      ctx.stroke();
+
+      // head glow
+      ctx.globalAlpha = a;
+      const head = ctx.createRadialGradient(m.x, m.y, 0, m.x, m.y, m.w * 14);
+      head.addColorStop(0, `rgba(255,255,255,${0.85 * a})`);
+      head.addColorStop(0.35, `rgba(155,246,255,${0.25 * a})`);
+      head.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = head;
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, m.w * 14, 0, Math.PI * 2);
+      ctx.fill();
+
+      nextM.push(m);
+    }
+
+    // update/draw meteor sparks
+    for (const p of meteorSparks) {
+      p.life -= dt;
+      if (p.life <= 0) continue;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vx *= 0.985;
+      p.vy *= 0.985;
+      const a = Math.max(0, Math.min(1, p.life / p.life0));
+      ctx.globalAlpha = a * 0.75;
+      const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 10);
+      glow.addColorStop(0, `rgba(255,255,255,${0.55 * a})`);
+      glow.addColorStop(0.6, `rgba(155,246,255,${0.20 * a})`);
+      glow.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r * 10, 0, Math.PI * 2);
+      ctx.fill();
+      nextS.push(p);
+    }
+
+    meteors = nextM;
+    meteorSparks = nextS;
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
   }
-  dlg.showModal();
+
+  // comets (two shooting stars that collide — less “robot”, more cinematic)
+  if (!prefersReducedMotion() && comets.length) {
+    ctx.globalCompositeOperation = "lighter";
+    const next = [];
+    for (const c of comets) {
+      const u = clamp((t - c.t0) / c.dur, 0, 1);
+      const e = 1 - Math.pow(1 - u, 2.6); // smooth ease
+
+      const x = quadBezier(c.x0, c.x1, c.x2, e);
+      const y = quadBezier(c.y0, c.y1, c.y2, e);
+
+      // derivative for direction
+      const dx = quadBezierDer(c.x0, c.x1, c.x2, e);
+      const dy = quadBezierDer(c.y0, c.y1, c.y2, e);
+      const L = Math.hypot(dx, dy) || 1;
+      const nx = dx / L;
+      const ny = dy / L;
+
+      // small organic wobble (removes “robotized” feel)
+      const wob = Math.sin((t * 0.001 + c.seed) * 9) * 0.9;
+      const px = x + (-ny * wob);
+      const py = y + (nx * wob);
+
+      drawComet(px, py, nx, ny, c.w, c.len, u);
+      c.lastX = px;
+      c.lastY = py;
+
+      if (u < 1) next.push(c);
+    }
+    comets = next;
+    ctx.globalCompositeOperation = "source-over";
+  }
+
+  // Trigger the impact sequence when both comets have reached the collision point.
+  if (!prefersReducedMotion() && impact && !impact.triggered && t >= impact.at + 1100) {
+    impact.triggered = true;
+    // Main impact blast at the collision
+    startScreenExplosion(impact.x, impact.y);
+
+    // Several fireworks across the whole screen (random positions/timing)
+    for (let i = 0; i < 8; i++) {
+      const dx = rand(w * 0.08, w * 0.92);
+      const dy = rand(h * 0.10, h * 0.78);
+      const delay = rand(80, 980);
+      setTimeout(() => startScreenExplosion(dx, dy), delay);
+    }
+
+    // After the fireworks, the fragments assemble into CLARINHA
+    setTimeout(() => startFinaleAt("CLARINHA", w * 0.5, h * 0.46), 1150);
+  }
+
+  // sparkles (wish burst)
+  if (!prefersReducedMotion() && sparkles.length) {
+    ctx.globalCompositeOperation = "lighter";
+    const next = [];
+    for (const p of sparkles) {
+      p.life -= dt;
+      if (p.life <= 0) continue;
+      p.vy += 22 * dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vx *= 0.985;
+      p.vy *= 0.99;
+
+      const a = Math.max(0, Math.min(1, p.life / p.life0));
+      ctx.globalAlpha = a * 0.85;
+
+      const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 10);
+      glow.addColorStop(0, `rgba(155,246,255,${0.35 * a})`);
+      glow.addColorStop(0.6, `rgba(244,208,111,${0.18 * a})`);
+      glow.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r * 10, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "rgba(255,255,255,0.92)";
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fill();
+
+      next.push(p);
+    }
+    sparkles = next;
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
+  }
+
+  // finale: fireworks fragments -> form CLARINHA (particle text)
+  if (!prefersReducedMotion() && finale) {
+    const now = t;
+    ctx.globalCompositeOperation = "lighter";
+
+    // supernova flash (first ~650ms)
+    const flashLeft = finale.phaseUntil - now;
+    if (flashLeft > 0) {
+      const p = 1 - clamp(flashLeft / 650, 0, 1);
+      const r = 18 + p * Math.min(w, h) * 0.45;
+      const g = ctx.createRadialGradient(finale.cx, finale.cy, 0, finale.cx, finale.cy, r);
+      g.addColorStop(0, `rgba(255,255,255,${0.75 * (1 - p)})`);
+      g.addColorStop(0.2, `rgba(155,246,255,${0.35 * (1 - p)})`);
+      g.addColorStop(0.55, `rgba(244,208,111,${0.14 * (1 - p)})`);
+      g.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(finale.cx, finale.cy, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // update/draw particles attracted to text targets
+    const next = [];
+    for (const p of textParticles) {
+      const fadeOut = clamp((finale.until - now) / 900, 0, 1);
+      const prog = clamp((now - finale.phaseUntil) / Math.max(1, finale.gatherUntil - finale.phaseUntil), 0, 1);
+      const k = 18 + prog * 26;
+
+      const dx = p.tx - p.x;
+      const dy = p.ty - p.y;
+      const ax = dx * k;
+      const ay = dy * k;
+      p.vx = (p.vx + ax * dt) * 0.78;
+      p.vy = (p.vy + ay * dt) * 0.78;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+
+      const dist2 = dx * dx + dy * dy;
+      // snap near target -> crisp letters
+      if (dist2 < 2.4 * 2.4) {
+        p.x = p.tx;
+        p.y = p.ty;
+        p.vx = 0;
+        p.vy = 0;
+      }
+
+      // tiny organic jitter
+      p.x += Math.sin((now * 0.001 + p.seed) * 5) * 0.03;
+      p.y += Math.cos((now * 0.001 + p.seed) * 5) * 0.03;
+
+      const a = Math.max(0.05, Math.min(1, p.a * fadeOut));
+      ctx.globalAlpha = a * 0.85;
+      const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 9);
+      glow.addColorStop(0, `rgba(255,255,255,${0.45 * a})`);
+      glow.addColorStop(0.4, `rgba(155,246,255,${0.18 * a})`);
+      glow.addColorStop(0.8, `rgba(244,208,111,${0.10 * a})`);
+      glow.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r * 9, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "rgba(255,255,255,0.95)";
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fill();
+
+      next.push(p);
+    }
+    textParticles = next;
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
+
+    // finish finale
+    if (now >= finale.until) {
+      finale = null;
+      textParticles = [];
+    }
+  }
+
+  raf = requestAnimationFrame(drawStars);
 }
 
-function closeFinalDialog() {
-  const dlg = $("finalDialog");
-  if (dlg.open) dlg.close();
-}
-
-let toastTimer = null;
-function toast(msg) {
-  const el = $("toast");
-  el.textContent = msg;
-  el.classList.add("is-on");
-  if (toastTimer) window.clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => el.classList.remove("is-on"), 1400);
-}
-
-function flashOk() {
-  const panel = $("challengePanel");
-  panel.classList.remove("flashOk");
-  void panel.offsetWidth; // force reflow so animation re-triggers
-  panel.classList.add("flashOk");
-}
-
-// Confetti (tiny + short, so it feels “premium” not childish)
-let confettiCtx = null;
-let confettiW = 0;
-let confettiH = 0;
-function initConfetti() {
-  const canvas = $("confetti");
-  confettiCtx = canvas.getContext("2d");
-  const resize = () => {
-    const dpr = window.devicePixelRatio || 1;
-    confettiW = canvas.clientWidth;
-    confettiH = canvas.clientHeight;
-    canvas.width = Math.floor(confettiW * dpr);
-    canvas.height = Math.floor(confettiH * dpr);
-    confettiCtx?.setTransform(dpr, 0, 0, dpr, 0, 0);
-  };
-  resize();
-  window.addEventListener("resize", resize);
-}
-
-function confettiBurst() {
+// ---- Meteors (canvas) ----
+function spawnMeteor({ intensity = 1 } = {}) {
   if (prefersReducedMotion()) return;
-  if (!confettiCtx) initConfetti();
-  if (!confettiCtx) return;
+  // start near top/left, travel down-right (more natural)
+  const startX = rand(-120, w * 0.75);
+  const startY = rand(-120, h * 0.40);
+  const sp = rand(980, 1650) * intensity;
+  const ang = rand(Math.PI * 0.12, Math.PI * 0.28); // ~22°–50°
+  const vx = Math.cos(ang) * sp;
+  const vy = Math.sin(ang) * sp;
+  const len = rand(240, 520) * intensity;
+  const ww = rand(1.4, 2.6) * intensity;
+  const life0 = rand(0.55, 1.05);
+  const nx = vx / (Math.hypot(vx, vy) || 1);
+  const ny = vy / (Math.hypot(vx, vy) || 1);
+  meteors.push({
+    x: startX,
+    y: startY,
+    vx,
+    vy,
+    nx,
+    ny,
+    len,
+    w: ww,
+    life0,
+    life: life0,
+  });
+}
 
-  const ctx = confettiCtx;
-  const colors = ["#9bf6ff", "#f4d06f", "#ff5c7a", "rgba(255,255,255,.9)"];
-  const count = 70;
-  const cx = confettiW * 0.5;
-  const cy = 120;
-  const parts = Array.from({ length: count }, () => ({
-    x: cx + (Math.random() - 0.5) * 40,
-    y: cy + (Math.random() - 0.5) * 10,
-    vx: (Math.random() - 0.5) * 6.5,
-    vy: Math.random() * -6.5 - 3.5,
-    g: 0.22 + Math.random() * 0.12,
-    r: 2 + Math.random() * 2.5,
-    a: 1,
-    c: colors[(Math.random() * colors.length) | 0],
-    rot: Math.random() * Math.PI,
-    vr: (Math.random() - 0.5) * 0.25,
+function startScreenExplosion(cx, cy) {
+  if (prefersReducedMotion()) return;
+  const now = performance.now();
+  flash = { t0: now, dur: 900, x: cx, y: cy };
+
+  // BIG fireworks feel: multiple spark bursts across the screen
+  sparkBurstAt(cx, cy, 2.4);
+  for (let i = 0; i < 7; i++) {
+    sparkBurstAt(rand(w * 0.06, w * 0.94), rand(h * 0.08, h * 0.72), rand(1.0, 1.8));
+  }
+  // quick meteor rain during the blast
+  spawnMeteor({ intensity: 1.45 });
+  setTimeout(() => spawnMeteor({ intensity: 1.35 }), 90);
+  setTimeout(() => spawnMeteor({ intensity: 1.25 }), 180);
+  setTimeout(() => spawnMeteor({ intensity: 1.15 }), 270);
+}
+
+function computeTextTargets(text) {
+  // Offscreen render to sample pixels for target points.
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.floor(w));
+  c.height = Math.max(1, Math.floor(h));
+  const g = c.getContext("2d");
+  g.clearRect(0, 0, c.width, c.height);
+
+  const fontSize = clamp(Math.floor(w * 0.12), 46, 96);
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  g.font = `900 ${fontSize}px ui-serif, Georgia, serif`;
+  g.fillStyle = "white";
+
+  const x = c.width / 2;
+  const y = c.height * 0.46;
+  g.fillText(text, x, y);
+
+  const img = g.getImageData(0, 0, c.width, c.height).data;
+  // smaller step = more points = more legible text
+  const step = clamp(Math.floor(fontSize / 24), 2, 5);
+  const pts = [];
+  for (let yy = 0; yy < c.height; yy += step) {
+    for (let xx = 0; xx < c.width; xx += step) {
+      const a = img[(yy * c.width + xx) * 4 + 3];
+      if (a > 32) pts.push({ x: xx, y: yy });
+    }
+  }
+
+  // cap points for perf
+  const maxPts = 1800;
+  if (pts.length > maxPts) {
+    const sampled = [];
+    for (let i = 0; i < maxPts; i++) sampled.push(pts[(Math.random() * pts.length) | 0]);
+    return { pts: sampled, cx: x, cy: y };
+  }
+  return { pts, cx: x, cy: y };
+}
+
+function startFinaleAt(text, cx, cy) {
+  if (prefersReducedMotion()) return;
+  const res = computeTextTargets(text);
+  const pts = res.pts;
+
+  // Seed particles from “explosion dust” spread across screen, then pull into letters.
+  textParticles = pts.map((pt) => ({
+    x: rand(-40, w + 40),
+    y: rand(-40, h + 40),
+    vx: rand(-220, 220),
+    vy: rand(-220, 220),
+    tx: pt.x,
+    ty: pt.y,
+    r: rand(0.9, 1.9),
+    a: rand(0.55, 0.95),
+    seed: Math.random() * 10,
   }));
 
-  const start = performance.now();
-  const dur = 900;
-  function frame(t) {
-    const dt = (t - start) / dur;
-    ctx.clearRect(0, 0, confettiW, confettiH);
-    for (const p of parts) {
-      p.vy += p.g;
-      p.x += p.vx;
-      p.y += p.vy;
-      p.rot += p.vr;
-      p.a = 1 - dt;
-      ctx.globalAlpha = Math.max(0, p.a);
-      ctx.save();
-      ctx.translate(p.x, p.y);
-      ctx.rotate(p.rot);
-      ctx.fillStyle = p.c;
-      ctx.fillRect(-p.r, -p.r * 0.6, p.r * 2, p.r * 1.2);
-      ctx.restore();
-    }
-    ctx.globalAlpha = 1;
-    if (t - start < dur) requestAnimationFrame(frame);
-    else ctx.clearRect(0, 0, confettiW, confettiH);
-  }
-  requestAnimationFrame(frame);
-}
-
-// Clock animation
-let clockTimer = null;
-let clockTick = 0;
-let clockRaf = 0;
-let clockStartAt = 0;
-let lastBeat = -1;
-function startClock() {
-  if (clockRaf) return;
-  setPill("Em andamento", "warn");
-  const secHand = document.querySelector(".clock__hand--sec");
-  const minHand = document.querySelector(".clock__hand--min");
-
-  clockStartAt = performance.now();
-  lastBeat = -1;
-
-  const loop = (t) => {
-    const elapsed = (t - clockStartAt) / 1000;
-    const sec = elapsed % 60;
-    const min = (elapsed / 60) % 60;
-    const secDeg = sec * 6;
-    const minDeg = min * 6;
-    if (secHand) secHand.style.transform = `translate(-50%, -85%) rotate(${secDeg}deg)`;
-    if (minHand) minHand.style.transform = `translate(-50%, -85%) rotate(${minDeg}deg)`;
-
-    const beat = Math.floor(elapsed);
-    if (beat !== lastBeat) {
-      lastBeat = beat;
-      const isTic = beat % 2 === 0;
-      const a = $("tic");
-      const b = $("tac");
-      a.classList.toggle("tt--pulse", isTic);
-      b.classList.toggle("tt--pulse", !isTic);
-      const target = isTic ? a : b;
-      target.classList.remove("tt--beat");
-      void target.offsetWidth;
-      target.classList.add("tt--beat");
-      navigator.vibrate?.(6);
-    }
-    clockRaf = requestAnimationFrame(loop);
+  const now = performance.now();
+  finale = {
+    cx,
+    cy,
+    phaseUntil: now + 650,
+    gatherUntil: now + 2200, // more time to “organically” settle into letters
+    until: now + 3600,
+    text,
   };
-  clockRaf = requestAnimationFrame(loop);
 }
 
-function stopClock() {
-  if (clockRaf) cancelAnimationFrame(clockRaf);
-  clockRaf = 0;
+function drawStarHead(x, y, s = 1) {
+  const r = 10 * s;
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r * 5);
+  g.addColorStop(0, "rgba(255,255,255,.95)");
+  g.addColorStop(0.25, "rgba(155,246,255,.35)");
+  g.addColorStop(0.6, "rgba(244,208,111,.18)");
+  g.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(x, y, r * 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,.95)";
+  ctx.beginPath();
+  ctx.arc(x, y, r * 0.55, 0, Math.PI * 2);
+  ctx.fill();
 }
 
-// Challenge mechanics
-let state = loadState();
+function quadBezier(a, b, c, t) {
+  const u = 1 - t;
+  return u * u * a + 2 * u * t * b + t * t * c;
+}
+function quadBezierDer(a, b, c, t) {
+  return 2 * (1 - t) * (b - a) + 2 * t * (c - b);
+}
+function drawComet(x, y, nx, ny, w0, len, u) {
+  // tail points behind the head
+  const tail = len * (0.65 + 0.35 * (1 - u));
+  const tx = x - nx * tail;
+  const ty = y - ny * tail;
+  const grad = ctx.createLinearGradient(tx, ty, x, y);
+  grad.addColorStop(0, "rgba(155,246,255,0)");
+  grad.addColorStop(0.35, "rgba(155,246,255,0.20)");
+  grad.addColorStop(0.75, "rgba(244,208,111,0.16)");
+  grad.addColorStop(1, "rgba(255,255,255,0.92)");
+  ctx.strokeStyle = grad;
+  ctx.lineWidth = w0;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(tx, ty);
+  ctx.lineTo(x, y);
+  ctx.stroke();
 
-function currentChallengeIndex() {
-  // Challenge #0 is "start" and is considered completed once user clicks start.
-  // We map unlockedCount -> next challenge:
-  // unlocked 0 -> start
-  // unlocked 1 -> date
-  // unlocked 2 -> code
-  // unlocked 3 -> feelings
-  // unlocked 4 -> hold
-  // unlocked 5 -> rhythm
-  // unlocked 6 -> done
-  return clamp(state.unlocked, 0, CHALLENGES.length);
+  // head glow
+  const g = ctx.createRadialGradient(x, y, 0, x, y, w0 * 22);
+  g.addColorStop(0, "rgba(255,255,255,0.95)");
+  g.addColorStop(0.35, "rgba(155,246,255,0.30)");
+  g.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(x, y, w0 * 22, 0, Math.PI * 2);
+  ctx.fill();
 }
 
-function renderChallenge() {
-  const idx = currentChallengeIndex();
-  hideAllChallenges();
-  $("nextBtn").hidden = true;
+// ---- UI ----
+function wishBurst() {
+  if (prefersReducedMotion()) return;
 
-  if (state.unlocked >= STORY_PARTS.length) {
-    $("challengeTitle").textContent = "Tudo pronto";
-    $("challengeDesc").textContent = "Agora é só ver o texto completo — e guardar esse momento.";
-    setPill("Concluído", "ok");
-    showFinalButtonIfDone(state.unlocked);
-    return;
+  // name glow pulse
+  const name = document.getElementById("name");
+  if (name) {
+    name.classList.remove("is-wish");
+    // reflow to restart animation
+    void name.offsetWidth;
+    name.classList.add("is-wish");
   }
 
-  const ch = CHALLENGES[idx];
-  $("challengeTitle").textContent = ch.title;
-  $("challengeDesc").textContent = ch.desc;
-  setPill("Aguardando", "warn");
+  // Meteor burst
+  spawnMeteor({ intensity: 1.0 });
+  setTimeout(() => spawnMeteor({ intensity: 0.95 }), 120);
+  setTimeout(() => spawnMeteor({ intensity: 0.9 }), 240);
 
-  if (ch.ui === "date") $("challengeDate").hidden = false;
-  if (ch.ui === "code") $("challengeCode").hidden = false;
-  if (ch.ui === "feelings") $("challengeFeelings").hidden = false;
-  if (ch.ui === "hold") $("challengeHold").hidden = false;
-  if (ch.ui === "rhythm") $("challengeRhythm").hidden = false;
-}
-
-function unlockNext() {
-  if (state.unlocked >= STORY_PARTS.length) return;
-  state.unlocked++;
-  if (!Array.isArray(state.opened)) state.opened = [];
-  state.opened.push(false);
-  saveState(state);
-  const idx = state.unlocked - 1;
-  const grid = $("cardGrid");
-  const card = createCard(idx, false);
-  card.classList.add("is-new");
-  card.classList.add("loveCard--blink");
-  grid.appendChild(card);
-  // blink only for a short moment
-  setTimeout(() => card.classList.remove("loveCard--blink"), prefersReducedMotion() ? 0 : 2600);
-  setProgress(state.unlocked);
-  updateStepLabels(state.unlocked);
-  showFinalButtonIfDone(state.unlocked);
-  showFinalCardIfDone(state.unlocked);
-  setPill("Desbloqueado ✓", "ok");
-  flashOk();
-  confettiBurst();
-  toast("Nova carta desbloqueada");
-  navigator.vibrate?.(22);
-  $("storyPanel").scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth", block: "start" });
-  $("nextBtn").hidden = state.unlocked >= STORY_PARTS.length;
-  if (!$("nextBtn").hidden) $("nextBtn").focus();
-
-  if (state.unlocked >= STORY_PARTS.length) {
-    // Auto-merge after a short beat.
-    setTimeout(() => void mergeCardsIntoFinal(), prefersReducedMotion() ? 0 : 850);
-  }
-}
-
-function resetAll() {
-  stopClock();
-  clockTick = 0;
-  state = { unlocked: 0, opened: [] };
-  saveState(state);
-
-  // reset UI inputs
-  $("dateInput").value = "";
-  $("codeInput").value = "";
-  resetFeelings();
-  resetHold();
-  resetRhythm();
-
-  renderCards();
-  setProgress(state.unlocked);
-  updateStepLabels(state.unlocked);
-  showFinalButtonIfDone(state.unlocked);
-  showFinalCardIfDone(state.unlocked);
-  renderChallenge();
-  setPill("Aguardando", "warn");
-  $("finalCard").hidden = true;
-  mergeInProgress = false;
-}
-
-// Date challenge
-function isOct18(dateStr) {
-  if (!dateStr) return false;
-  const d = new Date(dateStr + "T00:00:00");
-  // In date input, parsing can be timezone-sensitive; we only check month/day.
-  const month = d.getMonth() + 1;
-  const day = d.getDate();
-  return month === 10 && day === 18;
-}
-
-// Feelings challenge
-const selectedFeelings = new Set();
-function resetFeelings() {
-  selectedFeelings.clear();
-  document.querySelectorAll(".cardPick").forEach((btn) => {
-    btn.setAttribute("aria-pressed", "false");
-  });
-  $("feelingsConfirmBtn").disabled = true;
-}
-
-function updateFeelingsButton() {
-  const ok =
-    selectedFeelings.has("viver") && selectedFeelings.has("felicidade") && selectedFeelings.size === 2;
-  $("feelingsConfirmBtn").disabled = !ok;
-}
-
-// Hold challenge
-let holdStart = null;
-let holdRaf = null;
-function resetHold() {
-  holdStart = null;
-  if (holdRaf) cancelAnimationFrame(holdRaf);
-  holdRaf = null;
-  $("holdMeter").style.width = "0%";
-}
-
-function setHoldProgress(pct) {
-  $("holdMeter").style.width = `${clamp(pct, 0, 100)}%`;
-}
-
-// Rhythm challenge
-let rhythmSeq = [];
-let rhythmLastAt = 0;
-function resetRhythm() {
-  rhythmSeq = [];
-  rhythmLastAt = 0;
-  $("rhythmStatus").textContent = "0/4";
-}
-
-function pushRhythm(token) {
-  const now = Date.now();
-  // If too slow between taps, reset
-  if (rhythmLastAt && now - rhythmLastAt > 2500) rhythmSeq = [];
-  rhythmLastAt = now;
-  rhythmSeq.push(token);
-  const needed = ["tic", "tac", "tic", "tac"];
-  const okSoFar = needed.slice(0, rhythmSeq.length).every((v, i) => v === rhythmSeq[i]);
-  if (!okSoFar) {
-    rhythmSeq = [];
-    $("rhythmStatus").textContent = "0/4 (ops — tenta de novo)";
-    return;
-  }
-  $("rhythmStatus").textContent = `${rhythmSeq.length}/4`;
-  if (rhythmSeq.length === 4) {
-    unlockNext();
-  }
-}
-
-// Wire up events
-function init() {
-  // Initial render
-  // migrate old saved state
-  if (!Array.isArray(state.opened)) state.opened = Array(state.unlocked).fill(false);
-  renderCards();
-  setProgress(state.unlocked);
-  updateStepLabels(state.unlocked);
-  showFinalButtonIfDone(state.unlocked);
-  showFinalCardIfDone(state.unlocked);
-  renderChallenge();
-  initConfetti();
-
-  $("hintBtn").addEventListener("click", () => {
-    const hint = $("hintText");
-    hint.hidden = !hint.hidden;
-  });
-
-  $("resetBtn").addEventListener("click", () => resetAll());
-
-  $("startBtn").addEventListener("click", () => {
-    startClock();
-    if (state.unlocked === 0) {
-      unlockNext();
-      // move to next challenge immediately
-      renderChallenge();
-      setPill("Aguardando", "warn");
-    }
-  });
-
-  $("nextBtn").addEventListener("click", () => {
-    renderChallenge();
-    setPill("Aguardando", "warn");
-  });
-
-  $("dateCheckBtn").addEventListener("click", () => {
-    if (state.unlocked !== 1) return;
-    const val = $("dateInput").value;
-    if (isOct18(val)) {
-      unlockNext();
-    } else {
-      setPill("Quase", "warn");
-    }
-  });
-
-  $("codeCheckBtn").addEventListener("click", () => {
-    if (state.unlocked !== 2) return;
-    const code = normalize($("codeInput").value);
-    const ok = code === "tic tac" || code === "tictac" || code === "tic-tac" || code === "tic… tac" || code === "tic…tac";
-    if (ok) {
-      unlockNext();
-    } else {
-      setPill("Não ainda", "warn");
-    }
-  });
-
-  document.querySelectorAll(".cardPick").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      if (state.unlocked !== 3) return;
-      const pick = btn.getAttribute("data-pick");
-      if (!pick) return;
-      if (selectedFeelings.has(pick)) {
-        selectedFeelings.delete(pick);
-        btn.setAttribute("aria-pressed", "false");
-      } else {
-        // only allow two picks
-        if (selectedFeelings.size >= 2) return;
-        selectedFeelings.add(pick);
-        btn.setAttribute("aria-pressed", "true");
-      }
-      updateFeelingsButton();
+  // Sparkles explode from around the name
+  const rect = name?.getBoundingClientRect?.();
+  const cx = rect ? rect.left + rect.width / 2 : w * 0.5;
+  const cy = rect ? rect.top + rect.height * 0.55 : h * 0.42;
+  const count = 80;
+  for (let i = 0; i < count; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const sp = rand(80, 520);
+    sparkles.push({
+      x: cx + rand(-12, 12),
+      y: cy + rand(-10, 10),
+      vx: Math.cos(ang) * sp,
+      vy: Math.sin(ang) * sp * 0.7 - rand(30, 160),
+      r: rand(0.8, 2.1),
+      life0: rand(0.65, 1.25),
+      life: 0, // set below
     });
-  });
+    sparkles[sparkles.length - 1].life = sparkles[sparkles.length - 1].life0;
+  }
+}
 
-  $("feelingsConfirmBtn").addEventListener("click", () => {
-    if (state.unlocked !== 3) return;
-    const ok =
-      selectedFeelings.has("viver") && selectedFeelings.has("felicidade") && selectedFeelings.size === 2;
-    if (ok) {
-      unlockNext();
-    } else {
-      setPill("Quase", "warn");
-    }
-  });
+function sparkBurstAt(x, y, intensity = 1) {
+  if (prefersReducedMotion()) return;
+  const count = Math.floor(70 * intensity);
+  for (let i = 0; i < count; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const sp = rand(120, 760) * intensity;
+    sparkles.push({
+      x: x + rand(-10, 10),
+      y: y + rand(-10, 10),
+      vx: Math.cos(ang) * sp,
+      vy: Math.sin(ang) * sp * 0.7 - rand(40, 220) * intensity,
+      r: rand(0.9, 2.3) * intensity,
+      life0: rand(0.65, 1.15),
+      life: 0,
+    });
+    sparkles[sparkles.length - 1].life = sparkles[sparkles.length - 1].life0;
+  }
+}
 
-  const holdBtn = $("holdBtn");
-  const HOLD_MS = 3000;
+async function runShow() {
+  if (showActive) return;
+  const ui = document.querySelector(".ui");
+  const btn = $("wishBtn");
+  btn.disabled = true;
 
-  function tickHold() {
-    if (!holdStart) return;
-    const elapsed = Date.now() - holdStart;
-    const pct = (elapsed / HOLD_MS) * 100;
-    setHoldProgress(pct);
-    if (elapsed >= HOLD_MS) {
-      holdStart = null;
-      setHoldProgress(100);
-      if (state.unlocked === 4) unlockNext();
-      return;
-    }
-    holdRaf = requestAnimationFrame(tickHold);
+  // Hide the button
+  ui?.classList.add("is-hidden");
+
+  if (prefersReducedMotion()) {
+    // minimal: quick flash of a few stars then restore
+    setTimeout(() => {
+      sky?.classList.remove("is-showtime");
+      btn.disabled = false;
+    }, 400);
+    return;
   }
 
-  function startHold() {
-    if (state.unlocked !== 4) return;
-    if (holdStart) return;
-    holdStart = Date.now();
-    setPill("Segurando", "warn");
-    holdRaf = requestAnimationFrame(tickHold);
-  }
+  // Showtime
+  showActive = true;
+  showUntil = performance.now() + 4200;
 
-  function endHold() {
-    if (!holdStart) return;
-    holdStart = null;
-    setHoldProgress(0);
-    setPill("Sem pressa", "warn");
-  }
+  // Kickoff: immediate meteor rain + sparkles
+  sparkBurstAt(w * 0.5, h * 0.35, 1.1);
+  spawnMeteor({ intensity: 1.1 });
+  setTimeout(() => spawnMeteor({ intensity: 1.0 }), 110);
+  setTimeout(() => spawnMeteor({ intensity: 0.95 }), 220);
 
-  holdBtn.addEventListener("pointerdown", (e) => {
-    e.preventDefault();
-    holdBtn.setPointerCapture?.(e.pointerId);
-    startHold();
-  });
-  holdBtn.addEventListener("pointerup", endHold);
-  holdBtn.addEventListener("pointercancel", endHold);
-  holdBtn.addEventListener("pointerleave", endHold);
+  let tick = 0;
+  const showTimer = window.setInterval(() => {
+    tick++;
+    spawnMeteor({ intensity: 1.05 });
+    if (tick % 3 === 0) setTimeout(() => spawnMeteor({ intensity: 0.95 }), 90);
+    if (tick % 5 === 0) setTimeout(() => spawnMeteor({ intensity: 0.9 }), 180);
 
-  $("rhythmTic").addEventListener("click", () => {
-    if (state.unlocked !== 5) return;
-    pushRhythm("tic");
-  });
-  $("rhythmTac").addEventListener("click", () => {
-    if (state.unlocked !== 5) return;
-    pushRhythm("tac");
-  });
-
-  $("finalBtn").addEventListener("click", () => openFinalDialog());
-  $("finalCard").addEventListener("click", () => openFinalDialog());
-  $("closeDialogBtn").addEventListener("click", () => closeFinalDialog());
-
-  $("copyBtn").addEventListener("click", async () => {
-    try {
-      await navigator.clipboard.writeText(FINAL_TEXT);
-      $("copyBtn").textContent = "Copiado!";
-      setTimeout(() => ($("copyBtn").textContent = "Copiar texto"), 1200);
-    } catch {
-      $("copyBtn").textContent = "Não deu :(";
-      setTimeout(() => ($("copyBtn").textContent = "Copiar texto"), 1200);
+    // Random sparkle explosions across the sky
+    if (tick % 2 === 0) {
+      sparkBurstAt(rand(w * 0.15, w * 0.85), rand(h * 0.12, h * 0.55), rand(0.6, 1.05));
     }
+  }, 180);
+
+  // Mid-show: TWO shooting stars (comets) collide (curved paths, organic timing)
+  const now = performance.now();
+  const ix = w * rand(0.45, 0.58);
+  const iy = h * rand(0.30, 0.42);
+  impact = { x: ix, y: iy, at: now + 1400, triggered: false };
+
+  const durA = rand(860, 1180);
+  const durB = rand(860, 1180);
+  comets.push({
+    t0: impact.at,
+    dur: durA,
+    x0: -120,
+    y0: h * rand(0.15, 0.40),
+    x1: w * rand(0.20, 0.45),
+    y1: h * rand(0.05, 0.30),
+    x2: ix,
+    y2: iy,
+    w: rand(1.6, 2.4),
+    len: rand(320, 560),
+    seed: Math.random() * 10,
+    lastX: 0,
+    lastY: 0,
+  });
+  comets.push({
+    t0: impact.at + rand(40, 140),
+    dur: durB,
+    x0: w + 140,
+    y0: h * rand(0.18, 0.46),
+    x1: w * rand(0.55, 0.82),
+    y1: h * rand(0.06, 0.34),
+    x2: ix,
+    y2: iy,
+    w: rand(1.6, 2.4),
+    len: rand(320, 560),
+    seed: Math.random() * 10,
+    lastX: 0,
+    lastY: 0,
   });
 
-  // If user already unlocked everything, ensure clock looks alive for vibes
-  if (state.unlocked > 0) startClock();
+  // Wait for show end
+  await new Promise((r) => setTimeout(r, 4300));
+  clearInterval(showTimer);
+  showActive = false;
+
+  // If impact happened, give time for CLARINHA to form
+  if (!prefersReducedMotion() && finale) await new Promise((r) => setTimeout(r, 3600));
+
+  // Restore button
+  ui?.classList.remove("is-hidden");
+  btn.disabled = false;
+}
+
+function initUI() {
+  const wishBtn = $("wishBtn");
+
+  wishBtn.addEventListener("click", () => {
+    // Full show: hide hero and run the sky spectacle
+    void runShow();
+  });
+}
+
+function init() {
+  resizeStars();
+  window.addEventListener("resize", () => {
+    resizeStars();
+  });
+
+  initUI();
+  raf = requestAnimationFrame(drawStars);
 }
 
 document.addEventListener("DOMContentLoaded", init);
