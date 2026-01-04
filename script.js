@@ -39,6 +39,18 @@ let comets = []; // cinematic shooting stars that can collide
 let impact = null; // { x,y, at, triggered }
 let flash = null; // { t0, dur, x, y }
 
+// perf tuning (mobile-friendly)
+let quality = {
+  dprCap: 1.5,
+  sparkleCap: 1200,
+  textCap: 1200,
+  burstMultiplier: 1.0,
+  stepMin: 3,
+  stepMax: 7,
+};
+
+let sprite = null; // pre-rendered glow sprite
+
 function rand(min, max) {
   return min + Math.random() * (max - min);
 }
@@ -49,13 +61,39 @@ function clamp(n, min, max) {
 
 function resizeStars() {
   const canvas = $("stars");
-  dpr = window.devicePixelRatio || 1;
+  // cap DPR to avoid huge canvas on high-density mobile screens
+  dpr = Math.min(window.devicePixelRatio || 1, quality.dprCap);
   w = canvas.clientWidth;
   h = canvas.clientHeight;
   canvas.width = Math.floor(w * dpr);
   canvas.height = Math.floor(h * dpr);
   ctx = canvas.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  // choose a quality profile based on canvas pixel count
+  const px = Math.floor(w * h * dpr * dpr);
+  if (px > 2_000_000) {
+    quality = { dprCap: 1.25, sparkleCap: 850, textCap: 900, burstMultiplier: 0.75, stepMin: 4, stepMax: 9 };
+  } else if (px > 1_200_000) {
+    quality = { dprCap: 1.5, sparkleCap: 1100, textCap: 1100, burstMultiplier: 0.9, stepMin: 3, stepMax: 8 };
+  } else {
+    quality = { dprCap: 1.75, sparkleCap: 1600, textCap: 1600, burstMultiplier: 1.0, stepMin: 2, stepMax: 6 };
+  }
+
+  // build a reusable glow sprite (cheap drawImage instead of per-particle gradients)
+  sprite = document.createElement("canvas");
+  sprite.width = 64;
+  sprite.height = 64;
+  const sg = sprite.getContext("2d");
+  const g = sg.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, "rgba(255,255,255,0.95)");
+  g.addColorStop(0.25, "rgba(155,246,255,0.35)");
+  g.addColorStop(0.6, "rgba(244,208,111,0.16)");
+  g.addColorStop(1, "rgba(255,255,255,0)");
+  sg.fillStyle = g;
+  sg.beginPath();
+  sg.arc(32, 32, 32, 0, Math.PI * 2);
+  sg.fill();
 
   const area = w * h;
   const scale = Math.max(0.7, Math.min(1.8, area / (1200 * 700)));
@@ -70,6 +108,14 @@ function resizeStars() {
     vx: rand(-12, 12),
     vy: rand(-10, 10),
   }));
+}
+
+function drawGlow(x, y, radius, alpha) {
+  if (!sprite) return;
+  ctx.globalAlpha = alpha;
+  const size = radius * 10;
+  ctx.drawImage(sprite, x - size / 2, y - size / 2, size, size);
+  ctx.globalAlpha = 1;
 }
 
 function drawStars(t) {
@@ -235,14 +281,11 @@ function drawStars(t) {
       p.vx *= 0.985;
       p.vy *= 0.985;
       const a = Math.max(0, Math.min(1, p.life / p.life0));
+      drawGlow(p.x, p.y, p.r, a * 0.55);
       ctx.globalAlpha = a * 0.75;
-      const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 10);
-      glow.addColorStop(0, `rgba(255,255,255,${0.55 * a})`);
-      glow.addColorStop(0.6, `rgba(155,246,255,${0.20 * a})`);
-      glow.addColorStop(1, "rgba(255,255,255,0)");
-      ctx.fillStyle = glow;
+      ctx.fillStyle = "rgba(255,255,255,0.92)";
       ctx.beginPath();
-      ctx.arc(p.x, p.y, p.r * 10, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
       ctx.fill();
       nextS.push(p);
     }
@@ -300,8 +343,12 @@ function drawStars(t) {
       setTimeout(() => startScreenExplosion(dx, dy), delay);
     }
 
-    // After the fireworks, the fragments assemble into CLARINHA
+    // After the fireworks, the fragments assemble into CLARINHA.
+    // Fallback: even if device is slow, force-start finale again a bit later.
     setTimeout(() => startFinaleAt("CLARINHA", w * 0.5, h * 0.46), 1150);
+    setTimeout(() => {
+      if (!finale) startFinaleAt("CLARINHA", w * 0.5, h * 0.46);
+    }, 2100);
   }
 
   // sparkles (wish burst)
@@ -318,18 +365,10 @@ function drawStars(t) {
       p.vy *= 0.99;
 
       const a = Math.max(0, Math.min(1, p.life / p.life0));
-      ctx.globalAlpha = a * 0.85;
-
-      const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 10);
-      glow.addColorStop(0, `rgba(155,246,255,${0.35 * a})`);
-      glow.addColorStop(0.6, `rgba(244,208,111,${0.18 * a})`);
-      glow.addColorStop(1, "rgba(255,255,255,0)");
-      ctx.fillStyle = glow;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.r * 10, 0, Math.PI * 2);
-      ctx.fill();
+      drawGlow(p.x, p.y, p.r, a * 0.45);
 
       ctx.fillStyle = "rgba(255,255,255,0.92)";
+      ctx.globalAlpha = a * 0.8;
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
       ctx.fill();
@@ -394,14 +433,8 @@ function drawStars(t) {
       const a = Math.max(0.05, Math.min(1, p.a * fadeOut));
       ctx.globalAlpha = a * 0.85;
       const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 9);
-      glow.addColorStop(0, `rgba(255,255,255,${0.45 * a})`);
-      glow.addColorStop(0.4, `rgba(155,246,255,${0.18 * a})`);
-      glow.addColorStop(0.8, `rgba(244,208,111,${0.10 * a})`);
-      glow.addColorStop(1, "rgba(255,255,255,0)");
-      ctx.fillStyle = glow;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.r * 9, 0, Math.PI * 2);
-      ctx.fill();
+      // cheaper: sprite glow instead of per-particle gradients
+      drawGlow(p.x, p.y, p.r, a * 0.4);
 
       ctx.fillStyle = "rgba(255,255,255,0.95)";
       ctx.beginPath();
@@ -459,15 +492,15 @@ function startScreenExplosion(cx, cy) {
   flash = { t0: now, dur: 900, x: cx, y: cy };
 
   // BIG fireworks feel: multiple spark bursts across the screen
-  sparkBurstAt(cx, cy, 2.4);
-  for (let i = 0; i < 7; i++) {
-    sparkBurstAt(rand(w * 0.06, w * 0.94), rand(h * 0.08, h * 0.72), rand(1.0, 1.8));
+  const m = quality.burstMultiplier;
+  sparkBurstAt(cx, cy, 2.2 * m);
+  for (let i = 0; i < Math.floor(5 * m + 2); i++) {
+    sparkBurstAt(rand(w * 0.06, w * 0.94), rand(h * 0.08, h * 0.72), rand(0.9, 1.6) * m);
   }
   // quick meteor rain during the blast
-  spawnMeteor({ intensity: 1.45 });
-  setTimeout(() => spawnMeteor({ intensity: 1.35 }), 90);
-  setTimeout(() => spawnMeteor({ intensity: 1.25 }), 180);
-  setTimeout(() => spawnMeteor({ intensity: 1.15 }), 270);
+  spawnMeteor({ intensity: 1.25 * m });
+  setTimeout(() => spawnMeteor({ intensity: 1.15 * m }), 90);
+  setTimeout(() => spawnMeteor({ intensity: 1.05 * m }), 180);
 }
 
 function computeTextTargets(text) {
@@ -490,7 +523,7 @@ function computeTextTargets(text) {
 
   const img = g.getImageData(0, 0, c.width, c.height).data;
   // smaller step = more points = more legible text
-  const step = clamp(Math.floor(fontSize / 24), 2, 5);
+  const step = clamp(Math.floor(fontSize / 20), quality.stepMin, quality.stepMax);
   const pts = [];
   for (let yy = 0; yy < c.height; yy += step) {
     for (let xx = 0; xx < c.width; xx += step) {
@@ -500,7 +533,7 @@ function computeTextTargets(text) {
   }
 
   // cap points for perf
-  const maxPts = 1800;
+  const maxPts = quality.textCap;
   if (pts.length > maxPts) {
     const sampled = [];
     for (let i = 0; i < maxPts; i++) sampled.push(pts[(Math.random() * pts.length) | 0]);
@@ -532,8 +565,8 @@ function startFinaleAt(text, cx, cy) {
     cx,
     cy,
     phaseUntil: now + 650,
-    gatherUntil: now + 2200, // more time to “organically” settle into letters
-    until: now + 3600,
+    gatherUntil: now + 2400, // more time to settle on mobile
+    until: now + 4200,
     text,
   };
 }
@@ -646,6 +679,11 @@ function sparkBurstAt(x, y, intensity = 1) {
       life: 0,
     });
     sparkles[sparkles.length - 1].life = sparkles[sparkles.length - 1].life0;
+  }
+
+  // cap sparkles to avoid mobile freeze
+  if (sparkles.length > quality.sparkleCap) {
+    sparkles = sparkles.slice(sparkles.length - quality.sparkleCap);
   }
 }
 
